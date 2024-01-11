@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
-use syn::{spanned::Spanned, DataEnum, Fields, Variant};
+use syn::{spanned::Spanned, Attribute, DataEnum, Fields, Variant};
 
 type TyType = proc_macro2::TokenStream;
 type IdentType = Ident;
@@ -238,6 +238,8 @@ fn check_is_enum(st: &syn::DeriveInput) -> syn::Result<&DataEnum> {
 fn generate_function(
     st: &syn::DeriveInput,
     de: &DataEnum,
+    block: bool,
+    no_async: bool,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let mut ret = proc_macro2::TokenStream::new();
     let basic = &st.ident;
@@ -247,19 +249,89 @@ fn generate_function(
         let arg = definition.fields().into_arg(variant.span());
         let function_name = definition.get_name(variant.span());
         let member = &variant.ident;
-        let result = quote! {
-            pub async fn #function_name (&self, #arg_def) -> std::option::Option<()> {
-                self.sender
-                    .send(#basic::#member #arg)
-                    .await
-                    .ok()
-            }
-
-        };
-        //eprintln!("{:#?}", result.to_string());
-        ret.extend(result)
+        if !no_async {
+            let result = quote! {
+                pub async fn #function_name (&self, #arg_def) -> std::option::Option<()> {
+                    self.sender
+                        .send(#basic::#member #arg)
+                        .await
+                        .ok()
+                }
+            };
+            //eprintln!("{:#?}", result.to_string());
+            ret.extend(result);
+        }
+        if block {
+            let result = quote! {
+                pub fn #function_name (&self, #arg_def) -> std::option::Option<()> {
+                    self.sender
+                        .blocking_send(#basic::#member #arg)
+                        .ok()
+                }
+            };
+            ret.extend(result);
+        }
     }
     Ok(ret)
+}
+
+fn parse_tokens(token_stream: &proc_macro2::TokenStream) -> syn::Result<(bool, bool)> {
+    let mut no_async = false;
+    let mut block = false;
+
+    for token in token_stream.clone().into_iter() {
+        match &token {
+            proc_macro2::TokenTree::Ident(ident) => {
+                if ident.eq("no_async") {
+                    no_async = true;
+                } else if ident.eq("block") {
+                    block = true;
+                } else {
+                    return Err(syn::Error::new(ident.span(), "Unrecognized token"));
+                }
+            }
+            _ => continue,
+        }
+    }
+    Ok((block, no_async))
+}
+
+fn parse_arguments(attrs: &[Attribute]) -> syn::Result<(bool, bool)> {
+    if attrs.is_empty() {
+        return Ok((false, false));
+    }
+    for attr in attrs {
+        match &attr.meta {
+            syn::Meta::Path(_) => {
+                return Err(syn::Error::new(
+                    attr.span(),
+                    "Unimplemented syn::Meta::Path",
+                ))
+            }
+            syn::Meta::List(list) => {
+                if let Some(seg) = list.path.segments.first() {
+                    if !seg.ident.eq("helper") {
+                        continue;
+                    }
+                    let (block, no_async) = parse_tokens(&list.tokens)?;
+                    if !block && no_async {
+                        return Err(syn::Error::new(
+                            list.span(),
+                            "This code generate `new' function only!",
+                        ));
+                    }
+                    return Ok((block, no_async));
+                }
+            }
+            syn::Meta::NameValue(_) => {
+                return Err(syn::Error::new(
+                    attr.span(),
+                    "Unimplemented syn::Meta::NameValue",
+                ))
+            }
+        }
+    }
+    Ok((false, false))
 }
 
 fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
@@ -269,6 +341,8 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             "Should apply this drive to enum",
         ));
     } */
+    let (block, no_async) = parse_arguments(&st.attrs)?;
+    //eprintln!("{} {}", block, no_async);
     let data_enum = check_is_enum(st)?;
     //print_fields();
     let enum_name = st.ident.to_string();
@@ -285,7 +359,7 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
     let enum_ident = &st.ident;
 
-    let member_function = generate_function(st, data_enum)?;
+    let member_function = generate_function(st, data_enum, block, no_async)?;
 
     let ret = quote! {
 
@@ -315,10 +389,10 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     return Ok(ret);
 }
 
-#[proc_macro_derive(Helper)]
+#[proc_macro_derive(Helper, attributes(helper))]
 pub fn enum_helper_generator(input: TokenStream) -> TokenStream {
     let st = syn::parse_macro_input!(input as syn::DeriveInput);
-    //eprintln!("{:#?}", st);
+    //eprintln!("{:#?}", st.attrs);
     match do_expand(&st) {
         Ok(token_stream) => {
             //eprintln!("{}", token_stream.to_string());
