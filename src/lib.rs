@@ -4,7 +4,7 @@ use quote::{quote, ToTokens};
 use syn::{spanned::Spanned, DataEnum, Fields, Variant};
 
 type TyType = proc_macro2::TokenStream;
-type IdentType = String;
+type IdentType = Ident;
 
 #[derive(Clone)]
 enum FieldsType {
@@ -20,7 +20,6 @@ impl FieldsType {
                 let updated = v
                     .iter()
                     .map(|(ident, ty)| {
-                        let ident = Ident::new(&ident, span);
                         quote!(
                             #ident: #ty
                         )
@@ -43,10 +42,7 @@ impl FieldsType {
             FieldsType::Named(v) => {
                 let idents = v
                     .iter()
-                    .map(|(ident, _)| {
-                        let ident = Ident::new(&ident, span);
-                        quote!(#ident)
-                    })
+                    .map(|(ident, _)| quote!(#ident))
                     .collect::<Vec<_>>();
                 quote!({#(#idents), *})
             }
@@ -146,33 +142,30 @@ impl TryFrom<&syn::Fields> for FieldsType {
     type Error = syn::Error;
     fn try_from(fields: &syn::Fields) -> Result<Self, Self::Error> {
         let span = fields.span();
-        let fs: Vec<FieldType> = match fields {
-            Fields::Named(fields) => {
-                //fields.named.iter().map(|field| )
-                fields
-                    .named
+        let fs: Vec<FieldType> =
+            match fields {
+                Fields::Named(fields) => {
+                    //fields.named.iter().map(|field| )
+                    fields
+                        .named
+                        .iter()
+                        .map(|field| {
+                            Ok(FieldType::named(
+                                field.ident.as_ref().map(|ident| ident.clone()).ok_or_else(
+                                    || syn::Error::new_spanned(field, "Field should have a name"),
+                                )?,
+                                field.ty.to_token_stream(),
+                            ))
+                        })
+                        .collect::<syn::Result<Vec<FieldType>>>()?
+                }
+                Fields::Unnamed(fields) => fields
+                    .unnamed
                     .iter()
-                    .map(|field| {
-                        Ok(FieldType::named(
-                            field
-                                .ident
-                                .as_ref()
-                                .map(|ident| ident.to_string())
-                                .ok_or_else(|| {
-                                    syn::Error::new_spanned(field, "Field should have a name")
-                                })?,
-                            field.ty.to_token_stream(),
-                        ))
-                    })
-                    .collect::<syn::Result<Vec<FieldType>>>()?
-            }
-            Fields::Unnamed(fields) => fields
-                .unnamed
-                .iter()
-                .map(|field| FieldType::unnamed(field.ty.to_token_stream()))
-                .collect::<Vec<_>>(),
-            Fields::Unit => Vec::new(),
-        };
+                    .map(|field| FieldType::unnamed(field.ty.to_token_stream()))
+                    .collect::<Vec<_>>(),
+                Fields::Unit => Vec::new(),
+            };
 
         let fs = fs.try_into();
         match fs {
