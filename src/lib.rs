@@ -318,7 +318,7 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 #[proc_macro_derive(Helper)]
 pub fn enum_helper_generator(input: TokenStream) -> TokenStream {
     let st = syn::parse_macro_input!(input as syn::DeriveInput);
-    eprintln!("{:#?}", st);
+    //eprintln!("{:#?}", st);
     match do_expand(&st) {
         Ok(token_stream) => {
             //eprintln!("{}", token_stream.to_string());
