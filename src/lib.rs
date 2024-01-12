@@ -1,9 +1,9 @@
-use proc_macro::TokenStream;
+use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
 use syn::{spanned::Spanned, Attribute, DataEnum, Fields, Variant};
 
-type TyType = proc_macro2::TokenStream;
+type TyType = TokenStream;
 type IdentType = Ident;
 
 #[derive(Clone)]
@@ -14,7 +14,7 @@ enum FieldsType {
 }
 
 impl FieldsType {
-    fn into_arg_def(&self, span: Span) -> proc_macro2::TokenStream {
+    fn into_arg_def(&self, span: Span) -> TokenStream {
         match self {
             FieldsType::Named(v) => {
                 let updated = v
@@ -33,11 +33,11 @@ impl FieldsType {
                     .collect::<Vec<_>>();
                 quote!(#(#i: #v), *)
             }
-            FieldsType::None => proc_macro2::TokenStream::new(),
+            FieldsType::None => TokenStream::new(),
         }
     }
 
-    fn into_arg(&self, span: Span) -> proc_macro2::TokenStream {
+    fn into_arg(&self, span: Span) -> TokenStream {
         match self {
             FieldsType::Named(v) => {
                 let idents = v
@@ -52,7 +52,7 @@ impl FieldsType {
                     .collect::<Vec<_>>();
                 quote!((#(#i), *))
             }
-            FieldsType::None => proc_macro2::TokenStream::new(),
+            FieldsType::None => TokenStream::new(),
         }
     }
 }
@@ -199,6 +199,11 @@ impl EnumDefinition {
     fn get_name(&self, span: Span) -> Ident {
         Ident::new(&self.name_into_underline_type(), span)
     }
+    fn get_name_block(&self, span: Span) -> Ident {
+        // TODO: Optimize this
+        let block_name = format!("{}_b", self.name_into_underline_type());
+        Ident::new(&block_name, span)
+    }
 
     fn fields(&self) -> &FieldsType {
         &self.fields
@@ -240,8 +245,8 @@ fn generate_function(
     de: &DataEnum,
     block: bool,
     no_async: bool,
-) -> syn::Result<proc_macro2::TokenStream> {
-    let mut ret = proc_macro2::TokenStream::new();
+) -> syn::Result<TokenStream> {
+    let mut ret = TokenStream::new();
     let basic = &st.ident;
     for variant in &de.variants {
         let definition = EnumDefinition::try_from(variant)?;
@@ -262,6 +267,11 @@ fn generate_function(
             ret.extend(result);
         }
         if block {
+            let function_name = if no_async {
+                function_name
+            } else {
+                definition.get_name_block(variant.span())
+            };
             let result = quote! {
                 pub fn #function_name (&self, #arg_def) -> std::option::Option<()> {
                     self.sender
@@ -275,7 +285,7 @@ fn generate_function(
     Ok(ret)
 }
 
-fn parse_tokens(token_stream: &proc_macro2::TokenStream) -> syn::Result<(bool, bool)> {
+fn parse_tokens(token_stream: &TokenStream) -> syn::Result<(bool, bool)> {
     let mut no_async = false;
     let mut block = false;
 
@@ -303,10 +313,10 @@ fn parse_arguments(attrs: &[Attribute]) -> syn::Result<(bool, bool)> {
     for attr in attrs {
         match &attr.meta {
             syn::Meta::Path(_) => {
-                return Err(syn::Error::new(
+                /* return Err(syn::Error::new(
                     attr.span(),
                     "Unimplemented syn::Meta::Path",
-                ))
+                )) */
             }
             syn::Meta::List(list) => {
                 if let Some(seg) = list.path.segments.first() {
@@ -324,17 +334,17 @@ fn parse_arguments(attrs: &[Attribute]) -> syn::Result<(bool, bool)> {
                 }
             }
             syn::Meta::NameValue(_) => {
-                return Err(syn::Error::new(
+                /* return Err(syn::Error::new(
                     attr.span(),
                     "Unimplemented syn::Meta::NameValue",
-                ))
+                )) */
             }
         }
     }
     Ok((false, false))
 }
 
-fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+fn do_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
     /* if !st.data.eq(syn::Data) {
         return Err(syn::Error::new(
             st.span(),
@@ -390,7 +400,7 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 }
 
 #[proc_macro_derive(Helper, attributes(helper))]
-pub fn enum_helper_generator(input: TokenStream) -> TokenStream {
+pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let st = syn::parse_macro_input!(input as syn::DeriveInput);
     //eprintln!("{:#?}", st.attrs);
     match do_expand(&st) {
