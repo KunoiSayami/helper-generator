@@ -364,6 +364,9 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
     }
     let (basic_name, _) = enum_name.rsplit_once("Event").unwrap();
 
+    let helper_receiver_type = format!("{}Receiver", enum_name);
+    let helper_receiver_type_indent = syn::Ident::new(&helper_receiver_type, st.ident.span());
+
     let helper_name = format!("{}Helper", basic_name);
     let helper_name_ident = syn::Ident::new(&helper_name, st.ident.span());
 
@@ -378,8 +381,10 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
             sender: tokio::sync::mpsc::Sender<#enum_ident>
         }
 
+        pub type #helper_receiver_type_indent = tokio::sync::mpsc::Receiver<#enum_ident>;
+
         impl #helper_name_ident {
-            pub fn new(size: usize) -> (Self, tokio::sync::mpsc::Receiver<#enum_ident>) {
+            pub fn new(size: usize) -> (Self, #helper_receiver_type_indent) {
                 let (a, b) = tokio::sync::mpsc::channel(size);
                 (a.into(), b)
             }
@@ -394,6 +399,7 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
                 }
             }
         }
+
     };
 
     return Ok(ret);
@@ -412,4 +418,3 @@ pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::Toke
     }
     //eprintln!("{:#?}", item);
 }
-
