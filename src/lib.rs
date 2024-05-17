@@ -1,3 +1,6 @@
+mod enchanted;
+
+use enchanted::handle_new;
 use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
@@ -199,6 +202,7 @@ impl EnumDefinition {
     fn get_name(&self, span: Span) -> Ident {
         Ident::new(&self.name_into_underline_type(), span)
     }
+
     fn get_name_block(&self, span: Span) -> Ident {
         // TODO: Optimize this
         let block_name = format!("{}_b", self.name_into_underline_type());
@@ -417,4 +421,9 @@ pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::Toke
         Err(e) => e.to_compile_error().into(),
     }
     //eprintln!("{:#?}", item);
+}
+
+#[proc_macro]
+pub fn oneshot_helper(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    handle_new(input)
 }
