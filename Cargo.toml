@@ -1,10 +1,11 @@
 [package]
 name = "kstool-helper-generator"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 authors = ["KunoiSayami <i@leanhe.dev>"]
 description = "A macro help user create mpsc communications"
 license = "AGPL-3.0-or-later"
+repository = "https://github.com/KunoiSayami/helper-generator"
 
 
 [dependencies]

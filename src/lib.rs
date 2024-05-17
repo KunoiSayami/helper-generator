@@ -245,19 +245,31 @@ struct EnumDefinition {
 }
 
 impl EnumDefinition {
-    fn name_into_underline_type(&self) -> String {
+    fn name_into_snake_case(&self) -> String {
         let mut v = Vec::new();
-        for c in self.ident.chars().into_iter() {
+        let len = self.ident.len() - 1;
+        let mut prev_upcase = false;
+        for (index, c) in self.ident.chars().into_iter().rev().enumerate() {
+            let is_upcase = c.is_uppercase() || c.is_digit(10);
+            if v.len() == 0 {
+                prev_upcase = is_upcase;
+            }
             v.push(c.to_lowercase().to_string());
-            if v.len() > 1 && (c.is_uppercase() || c.is_digit(10)) {
-                v.insert(v.len() - 1, "_".to_string());
+
+            if index != len && is_upcase != prev_upcase {
+                v.insert(
+                    if !is_upcase { v.len() - 1 } else { v.len() },
+                    "_".to_string(),
+                );
+
+                prev_upcase = is_upcase;
             }
         }
-        v.into_iter().collect()
+        v.into_iter().rev().collect()
     }
 
     fn get_name(&self, span: Span) -> Ident {
-        Ident::new(&self.name_into_underline_type(), span)
+        Ident::new(&self.name_into_snake_case(), span)
     }
 
     fn get_normal_name(&self, span: Span) -> Ident {
@@ -266,7 +278,7 @@ impl EnumDefinition {
 
     fn get_name_block(&self, span: Span) -> Ident {
         // TODO: Optimize this
-        let block_name = format!("{}_b", self.name_into_underline_type());
+        let block_name = format!("{}_b", self.name_into_snake_case());
         Ident::new(&block_name, span)
     }
 
