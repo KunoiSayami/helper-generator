@@ -1,6 +1,5 @@
 mod enchanted;
 
-use enchanted::handle_new;
 use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
@@ -32,7 +31,7 @@ impl FieldsType {
             }
             FieldsType::Unnamed(v) => {
                 let i = (0..v.len())
-                    .map(|i| Ident::new(&format!("data{}", i), span))
+                    .map(|i| Ident::new(&format!("input{}", i), span))
                     .collect::<Vec<_>>();
                 quote!(#(#i: #v), *)
             }
@@ -51,11 +50,69 @@ impl FieldsType {
             }
             FieldsType::Unnamed(v) => {
                 let i = (0..v.len())
-                    .map(|i| (Ident::new(&format!("data{}", i), span)))
+                    .map(|i| (Ident::new(&format!("input{}", i), span)))
                     .collect::<Vec<_>>();
                 quote!((#(#i), *))
             }
             FieldsType::None => TokenStream::new(),
+        }
+    }
+
+    fn into_enum_arg_def(&self, return_type: Option<TokenStream>) -> TokenStream {
+        match self {
+            FieldsType::Named(v) => {
+                let mut idents = v
+                    .iter()
+                    .map(|(ident, ty)| {
+                        quote!(
+                            #ident: #ty
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                if let Some(ret) = return_type {
+                    let ident = Ident::new("__private_sender", ret.span());
+                    idents.push(quote! ( #ident: tokio::sync::oneshot::Sender< #ret >));
+                }
+                quote!({#(#idents), *})
+            }
+            FieldsType::Unnamed(v) => {
+                if let Some(ret) = return_type {
+                    let mut v = v.clone();
+                    v.push(quote! (tokio::sync::oneshot::Sender< #ret >));
+                    quote!((#(#v), *))
+                } else {
+                    quote!((#(#v), *))
+                }
+            }
+            FieldsType::None => {
+                if let Some(ret) = return_type {
+                    quote! {(tokio::sync::oneshot::Sender< #ret >)}
+                } else {
+                    TokenStream::new()
+                }
+            }
+        }
+    }
+
+    fn into_enchant_arg(&self, span: Span) -> TokenStream {
+        let private_receiver = Ident::new("__private_sender", span);
+        match self {
+            FieldsType::Named(v) => {
+                let mut idents = v
+                    .iter()
+                    .map(|(ident, _)| quote!(#ident))
+                    .collect::<Vec<_>>();
+                idents.push(quote! {#private_receiver});
+                quote!({#(#idents), *})
+            }
+            FieldsType::Unnamed(v) => {
+                let mut i = (0..v.len())
+                    .map(|i| (Ident::new(&format!("input{}", i), span)))
+                    .collect::<Vec<_>>();
+                i.push(private_receiver);
+                quote!((#(#i), *))
+            }
+            FieldsType::None => quote! {(#private_receiver)},
         }
     }
 }
@@ -203,6 +260,10 @@ impl EnumDefinition {
         Ident::new(&self.name_into_underline_type(), span)
     }
 
+    fn get_normal_name(&self, span: Span) -> Ident {
+        Ident::new(&self.ident, span)
+    }
+
     fn get_name_block(&self, span: Span) -> Ident {
         // TODO: Optimize this
         let block_name = format!("{}_b", self.name_into_underline_type());
@@ -234,7 +295,7 @@ impl TryFrom<&Variant> for EnumDefinition {
     //eprintln!("{:#?}", types);
 } */
 
-fn check_is_enum(st: &syn::DeriveInput) -> syn::Result<&DataEnum> {
+/* fn check_is_enum(st: &syn::DeriveInput) -> syn::Result<&DataEnum> {
     match st.data {
         syn::Data::Enum(ref data_enum) => Ok(data_enum),
         _ => Err(syn::Error::new_spanned(
@@ -242,7 +303,7 @@ fn check_is_enum(st: &syn::DeriveInput) -> syn::Result<&DataEnum> {
             "Must defined a enum, not struct".to_string(),
         )),
     }
-}
+} */
 
 fn generate_function(
     st: &syn::DeriveInput,
@@ -289,7 +350,7 @@ fn generate_function(
     Ok(ret)
 }
 
-fn parse_tokens(token_stream: &TokenStream) -> syn::Result<(bool, bool)> {
+pub(crate) fn parse_tokens(token_stream: &TokenStream) -> syn::Result<(bool, bool)> {
     let mut no_async = false;
     let mut block = false;
 
@@ -310,7 +371,7 @@ fn parse_tokens(token_stream: &TokenStream) -> syn::Result<(bool, bool)> {
     Ok((block, no_async))
 }
 
-fn parse_arguments(attrs: &[Attribute]) -> syn::Result<(bool, bool)> {
+pub(crate) fn parse_arguments(attrs: &[Attribute]) -> syn::Result<(bool, bool)> {
     if attrs.is_empty() {
         return Ok((false, false));
     }
@@ -348,7 +409,12 @@ fn parse_arguments(attrs: &[Attribute]) -> syn::Result<(bool, bool)> {
     Ok((false, false))
 }
 
-fn do_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
+pub(crate) fn do_expand(
+    st: &syn::DeriveInput,
+    replace_function: Option<
+        fn(&syn::DeriveInput, &syn::DataEnum, bool, bool) -> syn::Result<TokenStream>,
+    >,
+) -> syn::Result<TokenStream> {
     /* if !st.data.eq(syn::Data) {
         return Err(syn::Error::new(
             st.span(),
@@ -357,15 +423,9 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
     } */
     let (block, no_async) = parse_arguments(&st.attrs)?;
     //eprintln!("{} {}", block, no_async);
-    let data_enum = check_is_enum(st)?;
+    let data_enum = extract_enum(st)?;
     //print_fields();
     let enum_name = st.ident.to_string();
-    if !enum_name.contains("Event") {
-        return Err(syn::Error::new(
-            st.ident.span(),
-            "Should contains Event in name",
-        ));
-    }
     let (basic_name, _) = enum_name.rsplit_once("Event").unwrap();
 
     let helper_receiver_type = format!("{}Receiver", enum_name);
@@ -376,7 +436,10 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
 
     let enum_ident = &st.ident;
 
-    let member_function = generate_function(st, data_enum, block, no_async)?;
+    let member_function = match replace_function {
+        Some(func) => func(st, data_enum, block, no_async),
+        None => generate_function(st, data_enum, block, no_async),
+    }?;
 
     let ret = quote! {
 
@@ -409,11 +472,41 @@ fn do_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
     return Ok(ret);
 }
 
+pub(crate) fn early_check(st: &syn::DeriveInput) -> syn::Result<()> {
+    match st.data {
+        syn::Data::Enum(_) => {
+            if !st.ident.to_string().contains("Event") {
+                return Err(syn::Error::new(
+                    st.ident.span(),
+                    "Should contains Event in name",
+                ));
+            }
+            Ok(())
+        }
+        _ => Err(syn::Error::new_spanned(
+            st,
+            "Must defined a enum, not struct".to_string(),
+        )),
+    }
+}
+
+pub(crate) fn extract_enum(st: &syn::DeriveInput) -> syn::Result<&DataEnum> {
+    match st.data {
+        syn::Data::Enum(ref data_enum) => Ok(data_enum),
+        _ => unreachable!(),
+    }
+}
+
 #[proc_macro_derive(Helper, attributes(helper))]
 pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let st = syn::parse_macro_input!(input as syn::DeriveInput);
     //eprintln!("{:#?}", st.attrs);
-    match do_expand(&st) {
+
+    if let Err(e) = crate::early_check(&st) {
+        return e.into_compile_error().into();
+    }
+
+    match do_expand(&st, None) {
         Ok(token_stream) => {
             //eprintln!("{}", token_stream.to_string());
             token_stream.into()
@@ -425,5 +518,5 @@ pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::Toke
 
 #[proc_macro]
 pub fn oneshot_helper(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    handle_new(input)
+    enchanted::handle_new(input)
 }
