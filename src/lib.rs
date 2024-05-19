@@ -1,9 +1,14 @@
 mod enchanted;
 
+use once_cell::sync::Lazy;
 use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{quote, ToTokens};
 use syn::{spanned::Spanned, Attribute, DataEnum, Fields, Variant};
+
+static WORD_RE: Lazy<fancy_regex::Regex> =
+    Lazy::new(|| fancy_regex::Regex::new(r".(?:[^A-Z0-9]+|[A-Z0-9]*)(?![^A-Z0-9])").unwrap());
+static WORD_RE_ERROR: Lazy<String> = Lazy::new(|| "ERROR_PLEASE_REPORT".to_string());
 
 type TyType = TokenStream;
 type IdentType = Ident;
@@ -246,26 +251,18 @@ struct EnumDefinition {
 
 impl EnumDefinition {
     fn name_into_snake_case(&self) -> String {
-        let mut v = Vec::new();
-        let len = self.ident.len() - 1;
-        let mut prev_upcase = false;
-        for (index, c) in self.ident.chars().into_iter().rev().enumerate() {
-            let is_upcase = c.is_uppercase() || c.is_digit(10);
-            if v.len() == 0 {
-                prev_upcase = is_upcase;
-            }
-            v.push(c.to_lowercase().to_string());
-
-            if index != len && is_upcase != prev_upcase {
-                v.insert(
-                    if !is_upcase { v.len() - 1 } else { v.len() },
-                    "_".to_string(),
-                );
-
-                prev_upcase = is_upcase;
-            }
+        match WORD_RE
+            .find_iter(&self.ident)
+            .map(|s| s)
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(matches) => matches
+                .iter()
+                .map(|s| s.as_str().to_ascii_lowercase())
+                .collect::<Vec<_>>()
+                .join("_"),
+            Err(_) => WORD_RE_ERROR.clone(),
         }
-        v.into_iter().rev().collect()
     }
 
     fn get_name(&self, span: Span) -> Ident {

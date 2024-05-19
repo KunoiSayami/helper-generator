@@ -1,6 +1,6 @@
 [package]
 name = "kstool-helper-generator"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 authors = ["KunoiSayami <i@leanhe.dev>"]
 description = "A macro help user create mpsc communications"
@@ -12,6 +12,8 @@ repository = "https://github.com/KunoiSayami/helper-generator"
 quote = "1"
 syn = { version = "2", features = ["full", "extra-traits"] }
 proc-macro2 = { version = "1.0" }
+fancy-regex = "0.13.0"
+once_cell = "1"
 
 [lib]
 proc-macro = true
