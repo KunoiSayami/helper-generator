@@ -529,3 +529,29 @@ pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::Toke
 pub fn oneshot_helper(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     enchanted::handle_new(input)
 }
+
+#[cfg(test)]
+mod test {
+    use crate::EnumDefinition;
+
+    #[test]
+    fn test_snake_case_convert() {
+        fn func(input: &str) -> String {
+            EnumDefinition {
+                ident: input.to_string(),
+                fields: super::FieldsType::None,
+            }
+            .name_into_snake_case()
+        }
+
+        assert_eq!(func("GetHTTPResponse"), "get_http_response".to_string());
+        assert_eq!(func("CSV"), "csv".to_string());
+        assert_eq!(func("IPChecker"), "ip_checker".to_string());
+        assert_eq!(func("UserAdd"), "user_add".to_string());
+        assert_eq!(
+            func("IsHTTPSpecifyASpecicalAdd"),
+            "is_http_specify_a_specical_add".to_string()
+        );
+        assert_eq!(func("IPV4"), "ipv4".to_string())
+    }
+}
