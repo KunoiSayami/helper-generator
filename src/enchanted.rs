@@ -256,14 +256,13 @@ fn do_first_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
     Ok(ret)
 }
 
-pub fn handle_new(input: syn::DeriveInput) -> syn::Result<TokenStream> {
+pub(crate) fn handle_new(input: syn::DeriveInput) -> syn::Result<TokenStream> {
     //eprintln!("{:?}", early_st);
 
     crate::early_check(&input)?;
 
-    let mut header = do_first_expand(&input)?;
-
-    header.extend(do_expand(&input, Some(generate_function))?);
-
-    Ok(header)
+    do_first_expand(&input).and_then(|mut stream| {
+        stream.extend(do_expand(&input, Some(generate_function))?);
+        Ok(stream)
+    })
 }

@@ -513,24 +513,18 @@ pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::Toke
         return e.into_compile_error().into();
     }
 
-    match do_expand(&st, None) {
-        Ok(token_stream) => {
-            //eprintln!("{}", token_stream.to_string());
-            token_stream.into()
-        }
-        Err(e) => e.to_compile_error().into(),
-    }
+    do_expand(&st, None)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
     //eprintln!("{:#?}", item);
 }
 
 #[proc_macro]
 pub fn oneshot_helper(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let early_st = syn::parse_macro_input!(input as syn::DeriveInput);
-    match enchanted::handle_new(early_st) {
-        Ok(ret) => ret,
-        Err(e) => e.into_compile_error(),
-    }
-    .into()
+    enchanted::handle_new(early_st)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
 
 #[cfg(test)]
