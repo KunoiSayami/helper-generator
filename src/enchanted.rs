@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use syn::{spanned::Spanned, DataEnum, DeriveInput, Variant};
+use syn::{spanned::Spanned, DataEnum, Variant};
 
 use proc_macro2::Ident;
 use quote::{quote, ToTokens};
@@ -91,8 +91,8 @@ fn generate_normal_function(
 ) -> syn::Result<TokenStream> {
     let mut ret = TokenStream::new();
     let definition = EnumDefinition::try_from(variant)?;
-    let arg_def = definition.fields().into_arg_def(variant.span());
-    let arg = definition.fields().into_arg(variant.span());
+    let arg_def = definition.fields().to_arg_def(variant.span());
+    let arg = definition.fields().to_arg(variant.span());
     let function_name = definition.get_name(variant.span());
     let member = &variant.ident;
     if !no_async {
@@ -135,8 +135,8 @@ fn generate_waitable_function(
 ) -> syn::Result<TokenStream> {
     let mut ret = TokenStream::new();
     let definition = EnumDefinition::try_from(variant)?;
-    let arg_def = definition.fields().into_arg_def(variant.span());
-    let arg = definition.fields().into_enchant_arg(variant.span());
+    let arg_def = definition.fields().to_arg_def(variant.span());
+    let arg = definition.fields().enchant_arg(variant.span());
     let function_name = definition.get_name(variant.span());
     let member = &variant.ident;
     if !no_async {
@@ -202,11 +202,11 @@ fn parse_return_type(variant: &Variant) -> Option<TokenStream> {
         match &attr.meta {
             syn::Meta::List(list) => {
                 if !list.path.segments.first()?.ident.eq("ret") {
-                    return None;
+                    continue;
                 }
                 return Some(list.tokens.clone());
             }
-            _ => return None,
+            _ => continue,
         }
     }
     None
@@ -219,7 +219,7 @@ fn generate_member(_st: &syn::DeriveInput, de: &DataEnum) -> syn::Result<TokenSt
         //eprintln!("{:?}", parse_return_type(variant));
         let return_type = parse_return_type(variant);
         let definition = EnumDefinition::try_from(variant)?;
-        let arg_def = definition.fields().into_enum_arg_def(return_type);
+        let arg_def = definition.fields().enum_arg_def(return_type);
         //eprintln!("{:?}", arg_def);
         let enum_name = definition.get_normal_name(variant.span());
         let result = quote! {
@@ -253,32 +253,17 @@ fn do_first_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
 
     };
 
-    return Ok(ret);
+    Ok(ret)
 }
 
-pub fn handle_new(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    //eprintln!("{:?}", input);
-    let input2 = input.clone();
-
-    let early_st = syn::parse_macro_input!(input2 as DeriveInput);
+pub fn handle_new(input: syn::DeriveInput) -> syn::Result<TokenStream> {
     //eprintln!("{:?}", early_st);
 
-    if let Err(e) = crate::early_check(&early_st) {
-        return e.into_compile_error().into();
-    }
+    crate::early_check(&input)?;
 
-    let first = match do_first_expand(&early_st) {
-        Ok(ret) => ret,
-        Err(e) => return e.into_compile_error().into(),
-    };
-    let mut header = first.clone();
+    let mut header = do_first_expand(&input)?;
 
-    match do_expand(&early_st, Some(generate_function)) {
-        Ok(ret) => {
-            //eprintln!("--------------------------------");
-            header.extend(ret);
-            header.into()
-        }
-        Err(e) => e.into_compile_error().into(),
-    }
+    header.extend(do_expand(&input, Some(generate_function))?);
+
+    Ok(header)
 }

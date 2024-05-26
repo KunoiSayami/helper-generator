@@ -21,7 +21,7 @@ enum FieldsType {
 }
 
 impl FieldsType {
-    fn into_arg_def(&self, span: Span) -> TokenStream {
+    fn to_arg_def(&self, span: Span) -> TokenStream {
         match self {
             FieldsType::Named(v) => {
                 let updated = v
@@ -44,7 +44,7 @@ impl FieldsType {
         }
     }
 
-    fn into_arg(&self, span: Span) -> TokenStream {
+    fn to_arg(&self, span: Span) -> TokenStream {
         match self {
             FieldsType::Named(v) => {
                 let idents = v
@@ -63,7 +63,7 @@ impl FieldsType {
         }
     }
 
-    fn into_enum_arg_def(&self, return_type: Option<TokenStream>) -> TokenStream {
+    fn enum_arg_def(&self, return_type: Option<TokenStream>) -> TokenStream {
         match self {
             FieldsType::Named(v) => {
                 let mut idents = v
@@ -99,7 +99,7 @@ impl FieldsType {
         }
     }
 
-    fn into_enchant_arg(&self, span: Span) -> TokenStream {
+    fn enchant_arg(&self, span: Span) -> TokenStream {
         let private_receiver = Ident::new("__private_sender", span);
         match self {
             FieldsType::Named(v) => {
@@ -207,30 +207,29 @@ impl TryFrom<&syn::Fields> for FieldsType {
     type Error = syn::Error;
     fn try_from(fields: &syn::Fields) -> Result<Self, Self::Error> {
         let span = fields.span();
-        let fs: Vec<FieldType> =
-            match fields {
-                Fields::Named(fields) => {
-                    //fields.named.iter().map(|field| )
-                    fields
-                        .named
-                        .iter()
-                        .map(|field| {
-                            Ok(FieldType::named(
-                                field.ident.as_ref().map(|ident| ident.clone()).ok_or_else(
-                                    || syn::Error::new_spanned(field, "Field should have a name"),
-                                )?,
-                                field.ty.to_token_stream(),
-                            ))
-                        })
-                        .collect::<syn::Result<Vec<FieldType>>>()?
-                }
-                Fields::Unnamed(fields) => fields
-                    .unnamed
+        let fs: Vec<FieldType> = match fields {
+            Fields::Named(fields) => {
+                //fields.named.iter().map(|field| )
+                fields
+                    .named
                     .iter()
-                    .map(|field| FieldType::unnamed(field.ty.to_token_stream()))
-                    .collect::<Vec<_>>(),
-                Fields::Unit => Vec::new(),
-            };
+                    .map(|field| {
+                        Ok(FieldType::named(
+                            field.ident.clone().ok_or_else(|| {
+                                syn::Error::new_spanned(field, "Field should have a name")
+                            })?,
+                            field.ty.to_token_stream(),
+                        ))
+                    })
+                    .collect::<syn::Result<Vec<FieldType>>>()?
+            }
+            Fields::Unnamed(fields) => fields
+                .unnamed
+                .iter()
+                .map(|field| FieldType::unnamed(field.ty.to_token_stream()))
+                .collect::<Vec<_>>(),
+            Fields::Unit => Vec::new(),
+        };
 
         let fs = fs.try_into();
         match fs {
@@ -253,7 +252,6 @@ impl EnumDefinition {
     fn name_into_snake_case(&self) -> String {
         match WORD_RE
             .find_iter(&self.ident)
-            .map(|s| s)
             .collect::<Result<Vec<_>, _>>()
         {
             Ok(matches) => matches
@@ -324,8 +322,8 @@ fn generate_function(
     let basic = &st.ident;
     for variant in &de.variants {
         let definition = EnumDefinition::try_from(variant)?;
-        let arg_def = definition.fields().into_arg_def(variant.span());
-        let arg = definition.fields().into_arg(variant.span());
+        let arg_def = definition.fields().to_arg_def(variant.span());
+        let arg = definition.fields().to_arg(variant.span());
         let function_name = definition.get_name(variant.span());
         let member = &variant.ident;
         if !no_async {
@@ -418,11 +416,11 @@ pub(crate) fn parse_arguments(attrs: &[Attribute]) -> syn::Result<(bool, bool)> 
     Ok((false, false))
 }
 
+type GenMemberFn = fn(&syn::DeriveInput, &syn::DataEnum, bool, bool) -> syn::Result<TokenStream>;
+
 pub(crate) fn do_expand(
     st: &syn::DeriveInput,
-    replace_function: Option<
-        fn(&syn::DeriveInput, &syn::DataEnum, bool, bool) -> syn::Result<TokenStream>,
-    >,
+    replace_function: Option<GenMemberFn>,
 ) -> syn::Result<TokenStream> {
     /* if !st.data.eq(syn::Data) {
         return Err(syn::Error::new(
@@ -478,7 +476,7 @@ pub(crate) fn do_expand(
 
     };
 
-    return Ok(ret);
+    Ok(ret)
 }
 
 pub(crate) fn early_check(st: &syn::DeriveInput) -> syn::Result<()> {
@@ -527,7 +525,12 @@ pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::Toke
 
 #[proc_macro]
 pub fn oneshot_helper(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    enchanted::handle_new(input)
+    let early_st = syn::parse_macro_input!(input as syn::DeriveInput);
+    match enchanted::handle_new(early_st) {
+        Ok(ret) => ret,
+        Err(e) => e.into_compile_error(),
+    }
+    .into()
 }
 
 #[cfg(test)]
