@@ -1,10 +1,10 @@
 use proc_macro2::TokenStream;
-use syn::{spanned::Spanned, DataEnum, Variant};
+use syn::{DataEnum, Variant, spanned::Spanned};
 
 use proc_macro2::Ident;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 
-use crate::{do_expand, extract_enum, EnumDefinition};
+use crate::{EnumDefinition, do_expand, extract_enum};
 
 /* fn check_is_enum(input: &TokenStream) -> bool {
     for token in input.clone().into_iter() {
@@ -17,8 +17,8 @@ use crate::{do_expand, extract_enum, EnumDefinition};
     return false;
 }
  */
-/// Extract visibility and name
-/* fn header(input: TokenStream) -> syn::Result<(Vec<TokenTree>, TokenTree, TokenTree)> {
+/*/// Extract visibility and name
+ fn header(input: TokenStream) -> syn::Result<(Vec<TokenTree>, TokenTree, TokenTree)> {
     let mut v = Vec::new();
     let span = input.span();
     let mut iter = input.into_iter();
@@ -239,8 +239,22 @@ fn do_first_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let enum_ident = &st.ident;
 
     let mut attrs = TokenStream::new();
-    st.attrs.iter().for_each(|x| x.to_tokens(&mut attrs));
-    //eprintln!("{:?}", attrs);
+    st.attrs.iter().for_each(|x| {
+        //eprintln!("{x:?}");
+        if let syn::Attribute {
+            meta:
+                syn::Meta::List(syn::MetaList {
+                    path: syn::Path { segments, .. },
+                    ..
+                }),
+            ..
+        } = x
+            && segments.first().is_some_and(|x| x.ident.eq("helper"))
+        {
+            return;
+        }
+        x.to_tokens(&mut attrs)
+    });
 
     let member_function = generate_member(st, data_enum)?;
 

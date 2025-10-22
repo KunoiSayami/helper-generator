@@ -8,7 +8,7 @@ use syn::{spanned::Spanned, Attribute, DataEnum, Fields, Variant};
 
 static WORD_RE: Lazy<fancy_regex::Regex> =
     Lazy::new(|| fancy_regex::Regex::new(r".(?:[^A-Z0-9]+|[A-Z0-9]*)(?![^A-Z0-9])").unwrap());
-static WORD_RE_ERROR: Lazy<String> = Lazy::new(|| "ERROR_PLEASE_REPORT".to_string());
+static WORD_RE_ERROR: Lazy<String> = Lazy::new(|| "ERROR_PLEASE_REPORT".into());
 
 type TyType = TokenStream;
 type IdentType = Ident;
@@ -36,7 +36,7 @@ impl FieldsType {
             }
             FieldsType::Unnamed(v) => {
                 let i = (0..v.len())
-                    .map(|i| Ident::new(&format!("input{}", i), span))
+                    .map(|i| Ident::new(&format!("field{i}"), span))
                     .collect::<Vec<_>>();
                 quote!(#(#i: #v), *)
             }
@@ -55,7 +55,7 @@ impl FieldsType {
             }
             FieldsType::Unnamed(v) => {
                 let i = (0..v.len())
-                    .map(|i| (Ident::new(&format!("input{}", i), span)))
+                    .map(|i| Ident::new(&format!("field{i}"), span))
                     .collect::<Vec<_>>();
                 quote!((#(#i), *))
             }
@@ -112,7 +112,7 @@ impl FieldsType {
             }
             FieldsType::Unnamed(v) => {
                 let mut i = (0..v.len())
-                    .map(|i| (Ident::new(&format!("input{}", i), span)))
+                    .map(|i| Ident::new(&format!("field{i}"), span))
                     .collect::<Vec<_>>();
                 i.push(private_receiver);
                 quote!((#(#i), *))
@@ -232,13 +232,13 @@ impl TryFrom<&syn::Fields> for FieldsType {
         };
 
         let fs = fs.try_into();
-        match fs {
-            Ok(f) => Ok(f),
-            Err(_) => Err(syn::Error::new(
+        let Ok(f) = fs else {
+            return Err(syn::Error::new(
                 span,
                 "Type not match, it should never happened",
-            )),
-        }
+            ));
+        };
+        Ok(f)
     }
 }
 
@@ -250,17 +250,17 @@ struct EnumDefinition {
 
 impl EnumDefinition {
     fn name_into_snake_case(&self) -> String {
-        match WORD_RE
+        let Ok(matches) = WORD_RE
             .find_iter(&self.ident)
             .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(matches) => matches
-                .iter()
-                .map(|s| s.as_str().to_ascii_lowercase())
-                .collect::<Vec<_>>()
-                .join("_"),
-            Err(_) => WORD_RE_ERROR.clone(),
-        }
+        else {
+            return WORD_RE_ERROR.clone();
+        };
+        matches
+            .iter()
+            .map(|s| s.as_str().to_ascii_lowercase())
+            .collect::<Vec<_>>()
+            .join("_")
     }
 
     fn get_name(&self, span: Span) -> Ident {
@@ -435,10 +435,10 @@ pub(crate) fn do_expand(
     let enum_name = st.ident.to_string();
     let (basic_name, _) = enum_name.rsplit_once("Event").unwrap();
 
-    let helper_receiver_type = format!("{}Receiver", enum_name);
+    let helper_receiver_type = format!("{enum_name}Receiver");
     let helper_receiver_type_indent = syn::Ident::new(&helper_receiver_type, st.ident.span());
 
-    let helper_name = format!("{}Helper", basic_name);
+    let helper_name = format!("{basic_name}Helper");
     let helper_name_ident = syn::Ident::new(&helper_name, st.ident.span());
 
     let enum_ident = &st.ident;
@@ -546,8 +546,8 @@ mod test {
         assert_eq!(func("IPChecker"), "ip_checker".to_string());
         assert_eq!(func("UserAdd"), "user_add".to_string());
         assert_eq!(
-            func("IsHTTPSpecifyASpecicalAdd"),
-            "is_http_specify_a_specical_add".to_string()
+            func("IsHTTPSpecifyASpecialAdd"),
+            "is_http_specify_a_special_add".to_string()
         );
         assert_eq!(func("IPV4"), "ipv4".to_string())
     }
