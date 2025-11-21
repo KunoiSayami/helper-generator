@@ -4,7 +4,7 @@ use syn::{DataEnum, Variant, spanned::Spanned};
 use proc_macro2::Ident;
 use quote::{ToTokens, quote};
 
-use crate::{EnumDefinition, do_expand, extract_enum};
+use crate::basic::{EnumDefinition, do_expand, extract_enum};
 
 /* fn check_is_enum(input: &TokenStream) -> bool {
     for token in input.clone().into_iter() {
@@ -273,7 +273,7 @@ fn do_first_expand(st: &syn::DeriveInput) -> syn::Result<TokenStream> {
 pub(crate) fn handle_new(input: syn::DeriveInput) -> syn::Result<TokenStream> {
     //eprintln!("{:?}", early_st);
 
-    crate::early_check(&input)?;
+    crate::basic::early_check(&input)?;
 
     do_first_expand(&input).and_then(|mut stream| {
         stream.extend(do_expand(&input, Some(generate_function))?);
