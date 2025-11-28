@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{ToTokens, quote};
+use syn::Visibility;
 use syn::{Attribute, DataEnum, Fields, Variant, spanned::Spanned};
 
 static WORD_RE: LazyLock<fancy_regex::Regex> =
@@ -317,6 +318,7 @@ fn generate_function(
     de: &DataEnum,
     block: bool,
     no_async: bool,
+    vis: &Visibility,
 ) -> syn::Result<TokenStream> {
     let mut ret = TokenStream::new();
     let basic = &st.ident;
@@ -328,7 +330,7 @@ fn generate_function(
         let member = &variant.ident;
         if !no_async {
             let result = quote! {
-                pub async fn #function_name (&self, #arg_def) -> std::option::Option<()> {
+                #vis async fn #function_name (&self, #arg_def) -> std::option::Option<()> {
                     self.sender
                         .send(#basic::#member #arg)
                         .await
@@ -345,7 +347,7 @@ fn generate_function(
                 definition.get_name_block(variant.span())
             };
             let result = quote! {
-                pub fn #function_name (&self, #arg_def) -> std::option::Option<()> {
+                #vis fn #function_name (&self, #arg_def) -> std::option::Option<()> {
                     self.sender
                         .blocking_send(#basic::#member #arg)
                         .ok()
@@ -416,7 +418,8 @@ pub(crate) fn parse_arguments(attrs: &[Attribute]) -> syn::Result<(bool, bool)> 
     Ok((false, false))
 }
 
-type GenMemberFn = fn(&syn::DeriveInput, &syn::DataEnum, bool, bool) -> syn::Result<TokenStream>;
+type GenMemberFn =
+    fn(&syn::DeriveInput, &syn::DataEnum, bool, bool, &Visibility) -> syn::Result<TokenStream>;
 
 pub(crate) fn do_expand(
     st: &syn::DeriveInput,
@@ -428,6 +431,9 @@ pub(crate) fn do_expand(
             "Should apply this drive to enum",
         ));
     } */
+
+    let vis = st.vis.clone();
+
     let (block, no_async) = parse_arguments(&st.attrs)?;
     //eprintln!("{} {}", block, no_async);
     let data_enum = extract_enum(st)?;
@@ -444,21 +450,21 @@ pub(crate) fn do_expand(
     let enum_ident = &st.ident;
 
     let member_function = match replace_function {
-        Some(func) => func(st, data_enum, block, no_async),
-        None => generate_function(st, data_enum, block, no_async),
+        Some(func) => func(st, data_enum, block, no_async, &vis),
+        None => generate_function(st, data_enum, block, no_async, &vis),
     }?;
 
     let ret = quote! {
 
         #[derive(Clone, Debug)]
-        pub struct #helper_name_ident {
+        #vis struct #helper_name_ident {
             sender: tokio::sync::mpsc::Sender<#enum_ident>
         }
 
-        pub type #helper_receiver_type_indent = tokio::sync::mpsc::Receiver<#enum_ident>;
+        #vis type #helper_receiver_type_indent = tokio::sync::mpsc::Receiver<#enum_ident>;
 
         impl #helper_name_ident {
-            pub fn new(size: usize) -> (Self, #helper_receiver_type_indent) {
+            #vis fn new(size: usize) -> (Self, #helper_receiver_type_indent) {
                 let (a, b) = tokio::sync::mpsc::channel(size);
                 (a.into(), b)
             }

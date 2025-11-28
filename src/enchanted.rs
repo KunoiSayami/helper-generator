@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use syn::{DataEnum, Variant, spanned::Spanned};
+use syn::{DataEnum, Variant, Visibility, spanned::Spanned};
 
 use proc_macro2::Ident;
 use quote::{ToTokens, quote};
@@ -88,6 +88,7 @@ fn generate_normal_function(
     variant: &Variant,
     block: bool,
     no_async: bool,
+    vis: &Visibility,
 ) -> syn::Result<TokenStream> {
     let mut ret = TokenStream::new();
     let definition = EnumDefinition::try_from(variant)?;
@@ -97,7 +98,7 @@ fn generate_normal_function(
     let member = &variant.ident;
     if !no_async {
         let result = quote! {
-            pub async fn #function_name (&self, #arg_def) -> std::option::Option<()> {
+            #vis async fn #function_name (&self, #arg_def) -> std::option::Option<()> {
                 self.sender
                     .send(#basic::#member #arg)
                     .await
@@ -114,7 +115,7 @@ fn generate_normal_function(
             definition.get_name_block(variant.span())
         };
         let result = quote! {
-            pub fn #function_name (&self, #arg_def) -> std::option::Option<()> {
+            #vis fn #function_name (&self, #arg_def) -> std::option::Option<()> {
                 self.sender
                     .blocking_send(#basic::#member #arg)
                     .ok()
@@ -132,6 +133,7 @@ fn generate_waitable_function(
     return_type: TokenStream,
     block: bool,
     no_async: bool,
+    vis: &Visibility,
 ) -> syn::Result<TokenStream> {
     let mut ret = TokenStream::new();
     let definition = EnumDefinition::try_from(variant)?;
@@ -141,7 +143,7 @@ fn generate_waitable_function(
     let member = &variant.ident;
     if !no_async {
         let q = quote! {
-            pub async fn #function_name (&self, #arg_def) -> std::option::Option< #return_type > {
+            #vis async fn #function_name (&self, #arg_def) -> std::option::Option< #return_type > {
                 let (__private_sender, __private_r) = tokio::sync::oneshot::channel();
                 self.sender
                     .send(#basic::#member #arg)
@@ -160,7 +162,7 @@ fn generate_waitable_function(
             definition.get_name_block(variant.span())
         };
         let q = quote! {
-            pub fn #function_name (&self, #arg_def) -> std::option::Option< #return_type > {
+            #vis fn #function_name (&self, #arg_def) -> std::option::Option< #return_type > {
                 let (__private_sender, __private_r) = tokio::sync::oneshot::channel();
                 self.sender
                     .blocking_send(#basic::#member #arg)
@@ -178,6 +180,7 @@ fn generate_function(
     de: &DataEnum,
     block: bool,
     no_async: bool,
+    vis: &Visibility,
 ) -> syn::Result<TokenStream> {
     let mut ret = TokenStream::new();
     let basic = &st.ident;
@@ -185,9 +188,9 @@ fn generate_function(
         let return_type = parse_return_type(variant);
 
         let token = if let Some(ret) = return_type {
-            generate_waitable_function(basic, variant, ret, block, no_async)
+            generate_waitable_function(basic, variant, ret, block, no_async, vis)
         } else {
-            generate_normal_function(basic, variant, block, no_async)
+            generate_normal_function(basic, variant, block, no_async, vis)
         }?;
 
         //eprintln!("{:?}", token);

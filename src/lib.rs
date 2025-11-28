@@ -6,6 +6,7 @@ mod enchanted;
 pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let st = syn::parse_macro_input!(input as syn::DeriveInput);
     //eprintln!("{:#?}", st.attrs);
+    //eprintln!("{st:#?}");
 
     if let Err(e) = crate::basic::early_check(&st) {
         return e.into_compile_error().into();
@@ -14,7 +15,6 @@ pub fn enum_helper_generator(input: proc_macro::TokenStream) -> proc_macro::Toke
     basic::do_expand(&st, None)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
-    //eprintln!("{:#?}", item);
 }
 
 #[proc_macro]
