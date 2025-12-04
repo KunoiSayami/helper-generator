@@ -1,6 +1,6 @@
 [package]
 name = "kstool-helper-generator"
-version = "0.6.1"
+version = "0.7.0"
 edition = "2024"
 authors = ["KunoiSayami <i@leanhe.dev>"]
 description = "A macro help user create mpsc communications and other"

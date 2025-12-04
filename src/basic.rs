@@ -3,8 +3,8 @@ use std::sync::LazyLock;
 use proc_macro2::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::{ToTokens, quote};
-use syn::Visibility;
 use syn::{Attribute, DataEnum, Fields, Variant, spanned::Spanned};
+use syn::{Meta, MetaList, Visibility};
 
 static WORD_RE: LazyLock<fancy_regex::Regex> =
     LazyLock::new(|| fancy_regex::Regex::new(r".(?:[^A-Z0-9]+|[A-Z0-9]*)(?![^A-Z0-9])").unwrap());
@@ -13,10 +13,11 @@ static WORD_RE_ERROR: LazyLock<String> = LazyLock::new(|| "ERROR_PLEASE_REPORT".
 type TyType = TokenStream;
 type IdentType = Ident;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) enum FieldsType {
     Named(Vec<(IdentType, TyType)>),
     Unnamed(Vec<TyType>),
+    #[default]
     None,
 }
 
@@ -160,12 +161,6 @@ impl From<Vec<(IdentType, TyType)>> for FieldsType {
 impl From<Vec<TyType>> for FieldsType {
     fn from(value: Vec<TyType>) -> Self {
         Self::Unnamed(value)
-    }
-}
-
-impl Default for FieldsType {
-    fn default() -> Self {
-        Self::None
     }
 }
 
@@ -313,6 +308,31 @@ impl TryFrom<&Variant> for EnumDefinition {
     }
 } */
 
+fn parse_variant_attribute(
+    attrs: &[Attribute],
+    block: bool,
+    no_async: bool,
+) -> syn::Result<(bool, bool)> {
+    for attr in attrs {
+        //eprintln!("{attr:#?}");
+
+        let Meta::List(MetaList {
+            ref path,
+            ref tokens,
+            ..
+        }) = attr.meta
+        else {
+            continue;
+        };
+        if !path.segments.first().is_some_and(|x| x.ident.eq("helper")) {
+            continue;
+        }
+        return parse_tokens(tokens);
+    }
+
+    Ok((block, no_async))
+}
+
 fn generate_function(
     st: &syn::DeriveInput,
     de: &DataEnum,
@@ -323,6 +343,9 @@ fn generate_function(
     let mut ret = TokenStream::new();
     let basic = &st.ident;
     for variant in &de.variants {
+        let (block, no_async) = parse_variant_attribute(&variant.attrs, block, no_async)?;
+        //eprintln!("{variant:#?}");
+
         let definition = EnumDefinition::try_from(variant)?;
         let arg_def = definition.fields().to_arg_def(variant.span());
         let arg = definition.fields().to_arg(variant.span());
